@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in | PharmaCare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section class="auth">
+  <div class="brandpanel">
+    <div class="logo"><span class="mark">+</span> PharmaCare</div>
+    <div class="rx">
+      <div class="rx-top"><b>Rx</b><span>Pharmacy Management System</span></div>
+      <h1>Every prescription,<br>billed and tracked.</h1>
+      <ul><li>Live inventory with low-stock and expiry alerts</li><li>Fast billing with GST and printable invoices</li><li>Customer history and supplier records in one place</li></ul>
+      <div class="rx-foot">Built by <b>Gaurav Singh Bajetha (12613038)</b><div class="team">Other team members: Aditya Kumar (12613103), Adarsh Kumar (12613193)</div></div>
+    </div>
+  </div>
+  <div class="formpanel">
+    <form id="f" class="authbox" autocomplete="on">
+      <h2>Welcome back</h2><p class="muted">Sign in to manage your pharmacy.</p>
+      <div id="msg" class="alert" hidden></div>
+      <label>Email<input id="e" type="email" placeholder="you@example.com" required></label>
+      <label>Password<input id="p" type="password" placeholder="Enter your password" required></label>
+      <button class="btn primary lg" type="submit">Sign in</button>
+      <p class="switch">New customer? <a href="signup.html">Create an account</a></p>
+      <p class="demo">Demo admin: <code>admin@pharmacy.com</code> / <code>admin123</code></p>
+    </form>
+  </div>
+</section>
+<script src="auth.js"></script></body></html>

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS suppliers(id INTEGER PRIMARY KEY, name TEXT, phone TE
 CREATE TABLE IF NOT EXISTS sales(id INTEGER PRIMARY KEY, customer_id INTEGER, subtotal REAL, discount REAL, gst REAL, total REAL, created TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS sale_items(id INTEGER PRIMARY KEY, sale_id INTEGER, medicine_id INTEGER, name TEXT, qty INTEGER, price REAL);
 CREATE TABLE IF NOT EXISTS prescriptions(id INTEGER PRIMARY KEY, user_id INTEGER, file TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS prescribed_medicines(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, medicine_id INTEGER NOT NULL, qty INTEGER NOT NULL DEFAULT 1, instructions TEXT DEFAULT '', created TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, name TEXT, email TEXT, message TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
 `);
 if (!db.prepare('SELECT 1 FROM users').get()) {
@@ -98,7 +99,24 @@ app.post('/api/prescriptions', auth(), upload.single('file'), (req, res) => {
   db.prepare('INSERT INTO prescriptions(user_id,file) VALUES(?,?)').run(req.user.id, req.file.filename);
   res.json({ ok: true });
 });
-app.get('/api/prescriptions', auth(true), (req, res) => res.json(db.prepare('SELECT p.*,u.name FROM prescriptions p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC').all()));
+app.get('/api/prescriptions', auth(true), (req, res) => res.json(db.prepare('SELECT p.*,u.name,u.email FROM prescriptions p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC').all()));
+app.get('/api/customer-users', auth(true), (req, res) => res.json(db.prepare("SELECT id,name,email FROM users WHERE role='customer' ORDER BY name").all()));
+app.get('/api/prescribed-medicines', auth(), (req, res) => {
+  const sql = `SELECT pm.id,pm.user_id,pm.medicine_id,pm.qty,pm.instructions,pm.created,m.name,m.category,m.price,m.stock,m.expiry,u.name AS customer_name,u.email AS customer_email
+    FROM prescribed_medicines pm JOIN medicines m ON m.id=pm.medicine_id JOIN users u ON u.id=pm.user_id`;
+  const rows = req.user.role === 'admin' ? db.prepare(sql + ' ORDER BY pm.created DESC').all() : db.prepare(sql + ' WHERE pm.user_id=? ORDER BY pm.created DESC').all(req.user.id);
+  res.json(rows);
+});
+app.post('/api/prescribed-medicines', auth(true), (req, res) => {
+  const { user_id, medicine_id, qty, instructions='' } = req.body;
+  const user = db.prepare("SELECT id FROM users WHERE id=? AND role='customer'").get(user_id);
+  const med = db.prepare('SELECT id,stock FROM medicines WHERE id=?').get(medicine_id);
+  if (!user || !med) return res.status(400).json({error:'Choose a valid customer and medicine'});
+  if (!Number.isInteger(+qty) || +qty < 1) return res.status(400).json({error:'Quantity must be at least 1'});
+  db.prepare('INSERT INTO prescribed_medicines(user_id,medicine_id,qty,instructions) VALUES(?,?,?,?)').run(user_id, medicine_id, +qty, String(instructions).slice(0,500));
+  res.json({ok:true});
+});
+app.delete('/api/prescribed-medicines/:id', auth(true), (req,res) => { db.prepare('DELETE FROM prescribed_medicines WHERE id=?').run(req.params.id); res.json({ok:true}); });
 app.post('/api/contact', (req, res) => { db.prepare('INSERT INTO messages(name,email,message) VALUES(?,?,?)').run(req.body.name, req.body.email, req.body.message); res.json({ ok: true }); });
 
 app.listen(3000, () => console.log('Running on http://localhost:3000'));

@@ -42,7 +42,7 @@ const admin = () => user.role === 'admin';
 const PAGES = {
   admin: [['Dashboard', 'dash', dash, 'Overview of sales, stock and alerts'], ['Inventory', 'box', inventory, 'Manage medicines, stock levels and expiry dates'], ['Billing', 'bill', billing, 'Create bills and print invoices'],
     ['Customers', 'users', customers, 'Customer records and purchase history'], ['Suppliers', 'truck', suppliers, 'Who supplies which medicines'], ['Prescriptions', 'file', prescriptions, 'Prescriptions uploaded by customers'], ['About & Contact', 'info', about, 'Pharmacy details and messages']],
-  customer: [['Medicines', 'box', inventory, 'Browse available medicines'], ['Upload Prescription', 'file', prescriptions, 'Send us your prescription photo'], ['About & Contact', 'info', about, 'Pharmacy details and contact form']]
+  customer: [['Medicines', 'box', inventory, 'Browse available medicines'], ['Cart', 'bill', customerCart, 'Review medicines added to your cart'], ['Your Prescribed Medicines', 'file', prescribedMedicines, 'Medicines assigned by the pharmacy'], ['Upload Prescription', 'file', prescriptions, 'Send us your prescription photo'], ['About & Contact', 'info', about, 'Pharmacy details and contact form']]
 };
 function start() {
   if (!token || !user) return;
@@ -85,14 +85,17 @@ async function inventory() {
   const cats = [...new Set(meds.map(m => m.category))];
   $('#main').innerHTML = `<div class="panel"><div class="ph"><div class="tools"><input id="q" placeholder="Search medicines…"><select id="cat"><option value="">All categories</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
     ${admin() ? `<button class="btn primary" id="add">${I('plus')} Add medicine</button>` : ''}</div>
-    <div class="tw"><table><thead><tr><th>Medicine</th><th>Category</th><th class="num">Price</th><th>Stock</th><th>Expiry</th>${admin() ? '<th></th>' : ''}</tr></thead><tbody id="tb"></tbody></table></div></div>`;
+    <div class="tw"><table><thead><tr><th>Medicine</th><th>Category</th><th class="num">Price</th><th>Stock</th><th>Expiry</th>${admin() ? '<th></th>' : '<th></th>'}</tr></thead><tbody id="tb"></tbody></table></div></div>`;
   const draw = () => {
     const q = $('#q').value.toLowerCase(), c = $('#cat').value, l = meds.filter(m => m.name.toLowerCase().includes(q) && (!c || m.category === c));
     $('#tb').innerHTML = l.map(m => `<tr><td><b>${esc(m.name)}</b></td><td>${esc(m.category)}</td><td class="num">${money(m.price)}</td><td>${m.stock} ${stockBadge(m)}</td><td>${esc(m.expiry)} ${expBadge(m.expiry)}</td>
-      ${admin() ? `<td><div class="acts"><button class="btn sm" data-e="${m.id}">${I('edit')} Edit</button><button class="btn sm danger" data-d="${m.id}">${I('trash')}</button></div></td>` : ''}</tr>`).join('') || `<tr><td colspan="6">${empty('No medicines found', 'Try a different search or category.')}</td></tr>`;
+      ${admin() ? `<td><div class="acts"><button class="btn sm" data-e="${m.id}">${I('edit')} Edit</button><button class="btn sm danger" data-d="${m.id}">${I('trash')}</button></div></td>` : `<td><button class="btn sm primary" data-cart="${m.id}" ${m.stock <= 0 ? 'disabled' : ''}>Add to Cart</button></td>`}</tr>`).join('') || `<tr><td colspan="6">${empty('No medicines found', 'Try a different search or category.')}</td></tr>`;
   };
   $('#q').oninput = $('#cat').onchange = draw; draw();
-  if (!admin()) return;
+  if (!admin()) {
+    $('#tb').onclick = e => { const b=e.target.closest('button[data-cart]'); if(!b) return; const m=meds.find(x=>x.id==b.dataset.cart); addToCustomerCart(m); };
+    return;
+  }
   const F = [{ k: 'name', l: 'Medicine name', full: 1 }, { k: 'category', l: 'Category', p: 'Tablet, Syrup…' }, { k: 'price', l: 'Price (₹)', t: 'number' }, { k: 'stock', l: 'Stock quantity', t: 'number' }, { k: 'expiry', l: 'Expiry date', t: 'date' },
     { k: 'supplier_id', l: 'Supplier', opts: [{ v: '', t: 'None' }, ...sup.map(s => ({ v: s.id, t: s.name }))] }];
   const edit = m => formModal(m ? 'Edit medicine' : 'Add medicine', F, m || {}, async d => { await api('/medicines' + (m ? '/' + m.id : ''), m ? 'PUT' : 'POST', { ...d, price: +d.price, stock: +d.stock, supplier_id: d.supplier_id || null }); toast(m ? 'Medicine updated' : 'Medicine added'); refresh(); }, m ? 'Save changes' : 'Add medicine');
@@ -168,10 +171,39 @@ async function prescriptions() {
   const list = admin() ? await api('/prescriptions') : [];
   $('#main').innerHTML = `<div class="${admin() ? 'two' : ''}"><div class="panel"><h3>Upload a prescription</h3><p class="muted" style="margin-bottom:14px">Attach a clear photo of your prescription. Our pharmacist will review it.</p>
   <label>Prescription image<input type="file" id="pf" accept="image/*"></label><button class="btn primary" id="pu" style="margin-top:14px">${I('file')} Upload prescription</button></div>
-  ${admin() ? `<div class="panel"><h3>Received prescriptions</h3>${list.map(x => `<div class="al" style="margin-bottom:8px"><span><b>${esc(x.name)}</b><br><small class="muted">${esc(x.created)}</small></span><a class="btn sm" href="/uploads/${esc(x.file)}" target="_blank">View</a></div>`).join('') || empty('Nothing uploaded', 'Customer prescriptions will show up here.')}</div>` : ''}</div>`;
+  ${admin() ? `<div class="panel"><h3>Received prescriptions</h3>${list.map(x => `<div class="al" style="margin-bottom:8px"><span><b>${esc(x.name)}</b><br><small class="muted">${esc(x.email)} · ${esc(x.created)}</small></span><div class="acts"><a class="btn sm" href="/uploads/${esc(x.file)}" target="_blank">View</a><button class="btn sm primary" data-assign-user="${x.user_id}" data-assign-name="${esc(x.name)}">Assign medicines</button></div></div>`).join('') || empty('Nothing uploaded', 'Customer prescriptions will show up here.')}</div>` : ''}</div>`;
+  if (admin()) $('#main').onclick = async e => { const b=e.target.closest('button[data-assign-user]'); if(!b) return; await assignMedicineModal(b.dataset.assignUser,b.dataset.assignName); };
   $('#pu').onclick = async () => { const f = $('#pf').files[0]; if (!f) return toast('Choose an image first', true);
     const fd = new FormData(); fd.append('file', f); const r = await fetch('/api/prescriptions', { method: 'POST', headers: { Authorization: token }, body: fd });
     r.ok ? (toast('Prescription uploaded'), refresh()) : toast('Upload failed. Please try again.', true); };
+}
+
+/* customer cart and prescribed medicines */
+let cartItems = JSON.parse(sessionStorage.cartItems || '[]');
+function saveCustomerCart(){ sessionStorage.cartItems = JSON.stringify(cartItems); }
+function addToCustomerCart(m){
+  if(!m || m.stock<=0) return toast('Medicine is out of stock',true);
+  const item=cartItems.find(x=>x.id===m.id);
+  if(item){ if(item.qty>=m.stock) return toast('Not enough stock',true); item.qty++; }
+  else cartItems.push({id:m.id,name:m.name,price:m.price,qty:1,stock:m.stock});
+  saveCustomerCart(); toast(m.name+' added to cart');
+}
+async function customerCart(){
+  const meds=await api('/medicines');
+  cartItems=cartItems.map(x=>({...x,stock:(meds.find(m=>m.id===x.id)||{}).stock||0})).filter(x=>meds.some(m=>m.id===x.id)); saveCustomerCart();
+  const total=cartItems.reduce((s,x)=>s+x.price*x.qty,0);
+  $('#main').innerHTML=`<div class="panel"><div class="ph"><h3>Your Cart (${cartItems.length} items)</h3></div>${cartItems.length?`<div class="tw"><table><thead><tr><th>Medicine</th><th>Price</th><th>Quantity</th><th>Total</th><th></th></tr></thead><tbody>${cartItems.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${money(x.price)}</td><td><div class="qty"><button data-minus="${x.id}">−</button><span>${x.qty}</span><button data-plus="${x.id}" ${x.qty>=x.stock?'disabled':''}>+</button></div></td><td>${money(x.price*x.qty)}</td><td><button class="btn sm danger" data-remove="${x.id}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="sum"><div class="tot"><span>Estimated total</span><span>${money(total)}</span></div></div><p class="muted">This is a cart preview. Checkout and payment are not enabled in this demo.</p>`:empty('Your cart is empty','Go to Medicines and use Add to Cart to add products.')}</div>`;
+  $('#main').onclick=e=>{const b=e.target.closest('button');if(!b)return;const x=cartItems.find(z=>z.id===(+b.dataset.plus||+b.dataset.minus||+b.dataset.remove));if(!x)return;if(b.dataset.plus){if(x.qty<x.stock)x.qty++;else toast('Not enough stock',true)}if(b.dataset.minus){x.qty--;if(x.qty<=0)cartItems=cartItems.filter(z=>z.id!==x.id)}if(b.dataset.remove)cartItems=cartItems.filter(z=>z.id!==x.id);saveCustomerCart();refresh();};
+}
+async function prescribedMedicines(){
+  const rows=await api('/prescribed-medicines');
+  $('#main').innerHTML=`<div class="panel"><h3>Your Prescribed Medicines</h3><p class="muted" style="margin:8px 0 16px">These medicines have been assigned by the pharmacy after reviewing your prescription.</p>${rows.length?`<div class="tw"><table><thead><tr><th>Medicine</th><th>Category</th><th>Quantity</th><th>Price</th><th>Instructions</th><th>Availability</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${esc(x.category)}</td><td>${x.qty}</td><td>${money(x.price)}</td><td>${esc(x.instructions||'—')}</td><td>${x.stock>0?'In stock':'Out of stock'}</td><td><button class="btn sm primary" data-add-prescribed="${x.medicine_id}" ${x.stock<=0?'disabled':''}>Add to Cart</button></td></tr>`).join('')}</tbody></table></div>`:empty('No prescribed medicines yet','The pharmacy will list medicines here after reviewing your uploaded prescription.')}</div>`;
+  $('#main').onclick=e=>{const b=e.target.closest('button[data-add-prescribed]');if(!b)return;const m=rows.find(x=>x.medicine_id==b.dataset.addPrescribed);addToCustomerCart({...m,id:m.medicine_id});};
+}
+async function assignMedicineModal(userId,userName){
+ const [meds]=await Promise.all([api('/medicines')]);
+ const fields=[{k:'medicine_id',l:'Medicine',opts:meds.map(m=>({v:m.id,t:`${m.name} — ${money(m.price)} (${m.stock} in stock)`}))},{k:'qty',l:'Quantity',t:'number'},{k:'instructions',l:'Instructions',full:1,req:false,p:'As directed by pharmacist'}];
+ formModal('Assign medicines to '+userName,fields,{medicine_id:meds[0]?.id||'',qty:1,instructions:''},async d=>{await api('/prescribed-medicines','POST',{user_id:+userId,medicine_id:+d.medicine_id,qty:+d.qty,instructions:d.instructions});toast('Medicine assigned to customer');refresh();},'Assign medicine');
 }
 
 /* about */
